@@ -141,9 +141,6 @@ assert_contains "$o" "用法" "add 缺少参数"
 run_script remove; o=$(out)
 assert_contains "$o" "用法" "remove 缺少参数"
 
-run_script proxy; o=$(out)
-assert_contains "$o" "用法" "proxy 缺少参数"
-
 run_script restore alice /nonexistent; o=$(out)
 assert_contains "$o" "不存在" "restore 文件不存在"
 
@@ -168,9 +165,6 @@ assert_contains "$o" "不存在于配置文件中" "remove 不存在的用户"
 
 run_script restore nobody /nonexistent; o=$(out)
 assert_contains "$o" "不存在于配置文件中" "restore 不存在的用户报错"
-
-run_script proxy xyz; o=$(out)
-assert_contains "$o" "用法" "proxy 无效子命令"
 
 run_script add alice; o=$(out)
 assert_contains "$o" "用法" "add 缺少密码"
@@ -222,9 +216,9 @@ assert_contains "$o" "6810" "list 显示端口 6810"
 assert_contains "$o" "b3log/siyuan" "list 显示默认镜像"
 assert_contains "$o" "custom/siyuan:v3" "list 显示自定义镜像"
 
-# ---- proxy 命令 ----
+# ---- 自动代理 ----
 echo ""
-echo -e "${YELLOW}[proxy 反向代理]${NC}"
+echo -e "${YELLOW}[自动代理]${NC}"
 
 setup
 cat > "$TMP/test-users.conf" <<'CFGEOF'
@@ -232,16 +226,13 @@ alice:pass1
 bob:pass2
 CFGEOF
 
-run_script proxy start; o=$(out)
-assert_contains "$o" "代理启动成功" "proxy start 成功"
-assert_contains "$o" "/siyuan/alice/" "proxy 显示 alice 地址"
-assert_contains "$o" "/siyuan/bob/" "proxy 显示 bob 地址"
-assert_docker_called "siyuan-proxy" "创建代理容器"
-assert_docker_called "nginx:alpine" "使用 nginx 镜像"
+# start 容器时自动启动代理
+run_script start alice; o=$(out)
+assert_contains "$o" "nginx 代理已就绪" "start 自动启动代理"
+assert_docker_called "siyuan-proxy" "代理容器已创建"
 
-# 验证 nginx 配置文件生成
-assert_contains "$(cat "$TMP/../nginx/nginx.conf" 2>/dev/null || echo '')" "alice" "nginx 配置包含 alice 链接"
-assert_contains "$(cat "$TMP/../nginx/nginx.conf" 2>/dev/null || echo '')" "bob" "nginx 配置包含 bob 链接"
+# 验证 nginx 配置文件
+assert_contains "$(cat "$TMP/../nginx/nginx.conf" 2>/dev/null || echo '')" "alice" "nginx 配置包含 alice"
 assert_contains "$(cat "$TMP/../nginx/nginx.conf" 2>/dev/null || echo '')" "6806" "nginx 配置包含端口 6806"
 
 # ---- all 通配符 ----
@@ -304,8 +295,9 @@ assert_contains "$o" "已存在" "add 重复用户报错"
 run_script list; o=$(out)
 assert_contains "$o" "bob" "add 后 list 显示新用户"
 
-run_script remove bob --data; o=$(out)
+clear_log; run_script remove bob --data; o=$(out)
 assert_contains "$o" "已从配置文件中移除" "remove --data 移除用户并清理"
+assert_docker_called "siyuan-proxy" "remove 后更新代理"
 
 run_script remove bob; o=$(out)
 assert_contains "$o" "不存在于配置文件中" "remove 不存在的用户报错"

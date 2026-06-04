@@ -4,7 +4,7 @@
 
 - `siyuan-manager.sh` — 主管理脚本
 - `users.conf` — 用户配置文件（权限 600）
-- `test.sh` — 测试脚本（65 项）
+- `test.sh` — 测试脚本（60 项）
 - `.gitignore` — 忽略测试临时目录、备份目录、nginx 配置
 
 ## 配置文件格式
@@ -30,7 +30,6 @@ charlie:mypw:6812:custom/siyuan:v3      # 全自定义
 | `archives` | 列出备份文件 |
 | `add <user> <pw> [port] [img]` | 添加用户到配置文件 |
 | `remove <user> [--data]` | 从配置文件移除用户（--data 清理容器数据） |
-| `proxy <start\|stop\|restart>` | 管理 nginx 反向代理（统一入口） |
 
 ## 核心设计
 
@@ -45,7 +44,8 @@ charlie:mypw:6812:custom/siyuan:v3      # 全自定义
 
 ## nginx 代理
 
-- `proxy start` 启动 nginx 容器（默认端口 80），自动生成配置
+- 代理自动管理：`start`、`add`、`remove` 操作会自动更新 nginx 配置
+- 代理已运行时使用热重载（`nginx -s reload`），无需重启容器
 - 首页 `/` 展示所有用户列表，点击跳转到对应端口
 - `/siyuan/{user}` 301 重定向到 `http://host:{port}`，不修改思源内容
 - 思源笔记不支持子路径部署（无 servePath），因此采用端口重定向而非路径代理

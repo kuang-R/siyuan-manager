@@ -30,7 +30,8 @@ usage() {
   archives              列出所有备份文件
   add <user> <password> [port] [image]  添加用户到配置文件
   remove <username> [--data]  从配置文件移除用户（--data 同时清理容器和数据）
-  proxy <start|stop|restart>  管理 nginx 反向代理（统一访问入口）
+
+注: nginx 代理会自动管理，无需手动操作
 
 配置文件: $CONFIG_FILE
 格式: username:password[:port[:image]]
@@ -134,6 +135,7 @@ cmd_start() {
     if docker_ps | grep -q "^${cname}$"; then
         echo -e "${YELLOW}容器 $cname 已在运行中${NC}"
         echo "访问地址: http://localhost:$port"
+        ensure_proxy
         return
     fi
 
@@ -162,6 +164,8 @@ cmd_start() {
     echo -e "${GREEN}容器 $cname 启动成功${NC}"
     echo "访问地址: http://localhost:$port"
     echo "密码: $password"
+
+    ensure_proxy
 }
 
 cmd_stop() {
@@ -174,7 +178,6 @@ cmd_stop() {
         case "$1" in
             --rm)   remove_container=true ;;
             --data) remove_data=true; remove_container=true ;;
-            *) shift; continue ;;
         esac
         shift
     done
@@ -229,6 +232,7 @@ cmd_add() {
 
     echo "$line" >> "$CONFIG_FILE"
     echo -e "${GREEN}用户 '$user' 已添加${NC}"
+    ensure_proxy
 }
 
 cmd_remove() {
@@ -257,6 +261,7 @@ cmd_remove() {
     # 从配置文件中移除该用户行
     sed -i '' "/^${user}:/d" "$CONFIG_FILE"
     echo -e "${GREEN}用户 '$user' 已从配置文件中移除${NC}"
+    ensure_proxy
 }
 
 ensure_network() {
@@ -321,63 +326,35 @@ LOCATIONEOF
 NGINXEOF
 }
 
-cmd_proxy() {
-    local action="$1"
+# 确保代理运行并配置最新
+ensure_proxy() {
     local cname
     cname=$(proxy_name)
     local dir
     dir=$(nginx_dir)
 
-    case "$action" in
-        start)
-            ensure_network
-            generate_nginx_conf
+    ensure_network
+    generate_nginx_conf
 
-            if docker_ps | grep -q "^${cname}$"; then
-                echo -e "${YELLOW}代理 $cname 已在运行中${NC}"
-                return
-            fi
+    if docker_ps | grep -q "^${cname}$"; then
+        # 已在运行，重载配置
+        docker exec "$cname" nginx -s reload 2>/dev/null || true
+        return
+    fi
 
-            if docker_ps_a | grep -q "^${cname}$"; then
-                echo "启动已存在的代理容器..."
-                docker start "$cname"
-            else
-                echo "创建并启动 nginx 代理 (端口: $PROXY_PORT) ..."
-                docker run -d \
-                    --name "$cname" \
-                    --network "$NETWORK" \
-                    -p "${PROXY_PORT}:80" \
-                    -v "$dir/nginx.conf:/etc/nginx/nginx.conf:ro" \
-                    --restart unless-stopped \
-                    nginx:alpine
-            fi
+    if docker_ps_a | grep -q "^${cname}$"; then
+        docker start "$cname" > /dev/null
+    else
+        docker run -d \
+            --name "$cname" \
+            --network "$NETWORK" \
+            -p "${PROXY_PORT}:80" \
+            -v "$dir/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            --restart unless-stopped \
+            nginx:alpine > /dev/null
+    fi
 
-            echo -e "${GREEN}代理启动成功${NC}"
-            echo ""
-            echo "通过以下地址访问各用户笔记:"
-            read_config | while IFS=':' read -r u p port img; do
-                echo "  http://localhost:$PROXY_PORT/siyuan/$u/"
-            done
-            ;;
-        stop)
-            if docker_ps | grep -q "^${cname}$"; then
-                echo "停止代理容器 $cname ..."
-                docker stop "$cname"
-                echo -e "${GREEN}代理已停止${NC}"
-            else
-                echo -e "${YELLOW}代理未在运行${NC}"
-            fi
-            ;;
-        restart)
-            cmd_proxy stop
-            echo ""
-            cmd_proxy start
-            ;;
-        *)
-            echo -e "${RED}用法: $0 proxy <start|stop|restart>${NC}"
-            exit 1
-            ;;
-    esac
+    echo -e "${GREEN}nginx 代理已就绪: http://localhost:$PROXY_PORT${NC}"
 }
 
 cmd_restart() {
@@ -625,10 +602,6 @@ case "$COMMAND" in
     remove)
         [ $# -lt 1 ] && { echo -e "${RED}用法: $0 remove <username> [--data]${NC}"; exit 1; }
         cmd_remove "$@"
-        ;;
-    proxy)
-        [ $# -lt 1 ] && { echo -e "${RED}用法: $0 proxy <start|stop|restart>${NC}"; exit 1; }
-        cmd_proxy "$1"
         ;;
     -h|--help|help)
         usage
