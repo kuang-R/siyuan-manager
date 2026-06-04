@@ -46,6 +46,7 @@ charlie:mypw:6812:custom/siyuan:v3      # 全自定义
 
 - 代理自动管理：`start`、`add`、`remove` 操作会自动更新 nginx 配置
 - 代理已运行时使用热重载（`nginx -s reload`），无需重启容器
+- 所有笔记停止后代理容器自动删除，下次 `start` 时重新创建
 - 首页 `/` 展示所有用户列表，点击跳转到对应端口
 - `/siyuan/{user}` 301 重定向到 `http://host:{port}`，不修改思源内容
 - 思源笔记不支持子路径部署（无 servePath），因此采用端口重定向而非路径代理

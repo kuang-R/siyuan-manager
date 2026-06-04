@@ -213,6 +213,8 @@ cmd_stop() {
             echo -e "${GREEN}数据卷 $vname 已删除${NC}"
         fi
     fi
+
+    prune_proxy
 }
 
 cmd_add() {
@@ -326,6 +328,23 @@ LOCATIONEOF
 NGINXEOF
 }
 
+# 没有运行中的 siyuan 容器时关闭代理
+prune_proxy() {
+    local cname
+    cname=$(proxy_name)
+
+    # 检查是否有 siyuan 笔记容器在运行（排除代理自身）
+    local running
+    running=$(docker_ps | grep "^siyuan-" | grep -v "^${cname}$" || true)
+
+    if [ -z "$running" ]; then
+        if docker_ps_a | grep -q "^${cname}$"; then
+            echo "没有运行中的笔记，删除代理容器..."
+            docker rm -f "$cname" > /dev/null 2>&1 || true
+        fi
+    fi
+}
+
 # 确保代理运行并配置最新
 ensure_proxy() {
     local cname
@@ -333,7 +352,6 @@ ensure_proxy() {
     local dir
     dir=$(nginx_dir)
 
-    ensure_network
     generate_nginx_conf
 
     if docker_ps | grep -q "^${cname}$"; then
@@ -347,7 +365,6 @@ ensure_proxy() {
     else
         docker run -d \
             --name "$cname" \
-            --network "$NETWORK" \
             -p "${PROXY_PORT}:80" \
             -v "$dir/nginx.conf:/etc/nginx/nginx.conf:ro" \
             --restart unless-stopped \
