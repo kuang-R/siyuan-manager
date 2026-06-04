@@ -132,11 +132,14 @@ assert_contains "$o" "用法" "start 缺少参数"
 run_script stop; o=$(out)
 assert_contains "$o" "用法" "stop 缺少参数"
 
-run_script delete; o=$(out)
-assert_contains "$o" "用法" "delete 缺少参数"
-
 run_script archive; o=$(out)
 assert_contains "$o" "用法" "archive 缺少参数"
+
+run_script add; o=$(out)
+assert_contains "$o" "用法" "add 缺少参数"
+
+run_script remove; o=$(out)
+assert_contains "$o" "用法" "remove 缺少参数"
 
 run_script restore alice /nonexistent; o=$(out)
 assert_contains "$o" "不存在" "restore 文件不存在"
@@ -215,26 +218,51 @@ assert_contains "$o" "=== 用户: alice ===" "all stop 处理 alice"
 clear_log; run_script restart all; o=$(out)
 assert_contains "$o" "=== 用户: alice ===" "all restart 处理 alice"
 
-clear_log; run_script delete all; o=$(out)
-assert_contains "$o" "=== 用户: alice ===" "all delete 处理 alice"
+clear_log; run_script stop all --rm --data; o=$(out)
+assert_contains "$o" "=== 用户: alice ===" "all stop --rm --data 处理 alice"
 
 clear_log; run_script archive all; o=$(out)
 assert_contains "$o" "=== 用户: alice ===" "all archive 处理 alice"
 
-# ---- delete --data ----
+# ---- stop --rm/--data ----
 echo ""
-echo -e "${YELLOW}[delete --data]${NC}"
+echo -e "${YELLOW}[stop --rm/--data]${NC}"
 
 setup
 cat > "$TMP/test-users.conf" <<'CFGEOF'
 alice:pass1
 CFGEOF
 
-run_script delete alice --data; o=$(out)
-assert_contains "$o" "删除数据卷" "delete --data 删除数据卷"
+run_script stop alice --rm --data; o=$(out)
+assert_contains "$o" "删除数据卷" "stop --rm --data 删除数据卷"
 
-run_script delete alice; o=$(out)
-assert_not_contains "$o" "删除数据卷" "delete 不加 --data 不删卷"
+run_script stop alice --rm; o=$(out)
+assert_not_contains "$o" "删除数据卷" "stop --rm 不删数据卷"
+
+# ---- add/remove ----
+echo ""
+echo -e "${YELLOW}[add/remove 用户管理]${NC}"
+
+setup
+cat > "$TMP/test-users.conf" <<'CFGEOF'
+alice:pass1
+CFGEOF
+
+run_script add bob pass2 6810; o=$(out)
+assert_contains "$o" "已添加" "add 新用户成功"
+assert_contains "$(grep 'bob' "$TMP/test-users.conf")" "bob:pass2:6810" "add 写入配置正确"
+
+run_script add alice pass2; o=$(out)
+assert_contains "$o" "已存在" "add 重复用户报错"
+
+run_script list; o=$(out)
+assert_contains "$o" "bob" "add 后 list 显示新用户"
+
+run_script remove bob --data; o=$(out)
+assert_contains "$o" "已从配置文件中移除" "remove --data 移除用户并清理"
+
+run_script remove bob; o=$(out)
+assert_contains "$o" "不存在于配置文件中" "remove 不存在的用户报错"
 
 # ---- 注释和空行 ----
 echo ""

@@ -20,14 +20,15 @@ charlie:mypw:6812:custom/siyuan:v3      # 全自定义
 | 命令 | 说明 |
 |------|------|
 | `start <user\|all>` | 启动容器 |
-| `stop <user\|all>` | 停止容器 |
+| `stop <user\|all> [--rm] [--data]` | 停止容器（--rm 删除容器，--data 删除数据） |
 | `restart <user\|all>` | 重启容器 |
 | `status` | 查看运行状态 |
 | `list` | 列出用户及访问地址 |
 | `archive <user\|all>` | 备份数据 |
 | `restore <user> <file>` | 恢复数据 |
 | `archives` | 列出备份文件 |
-| `delete <user\|all> [--data]` | 删除容器（--data 同时删数据） |
+| `add <user> <pw> [port] [img]` | 添加用户到配置文件 |
+| `remove <user> [--data]` | 从配置文件移除用户（--data 清理容器数据） |
 
 ## 核心设计
 
@@ -37,7 +38,7 @@ charlie:mypw:6812:custom/siyuan:v3      # 全自定义
 - 容器参数：`--workspace=/siyuan/workspace --lang=zh_CN`
 - 访问授权码通过环境变量 `SIYUAN_ACCESS_AUTH_CODE` 传入（值为密码）
 - 数据通过 Docker volume 持久化，容器删除后数据不丢失
-- 可通过环境变量 `SIYUAN_CONFIG_FILE` 和 `SIYUAN_BACKUP_DIR` 覆盖配置和备份路径
+- 通过 `add`/`remove` 命令管理用户配置，`remove --data` 会同时清理容器和数据卷
 
 ## 注意事项
 

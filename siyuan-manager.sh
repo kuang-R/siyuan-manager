@@ -19,14 +19,15 @@ usage() {
 
 命令:
   start <username|all>    启动指定用户的思源笔记容器（all 表示所有用户）
-  stop <username|all>     停止指定用户的思源笔记容器（all 表示所有用户）
+  stop <username|all> [--rm] [--data]  停止容器（--rm 删除容器，--data 删除数据）
   restart <username|all>  重启指定用户的思源笔记容器（all 表示所有用户）
   status                查看所有用户容器的运行状态
   list                  列出所有用户及其访问地址
   archive <username|all>  备份指定用户的数据（all 表示所有用户）
   restore <username> <file>  从备份文件恢复用户数据
   archives              列出所有备份文件
-  delete <username|all> [--data]  删除容器（--data 同时删除数据）
+  add <user> <password> [port] [image]  添加用户到配置文件
+  remove <username> [--data]  从配置文件移除用户（--data 同时清理容器和数据）
 
 配置文件: $CONFIG_FILE
 格式: username:password[:port[:image]]
@@ -171,32 +172,18 @@ cmd_start() {
 
 cmd_stop() {
     local user="$1"
+    local remove_container=false
+    local remove_data=false
+    shift
 
-    if ! user_exists "$user"; then
-        echo -e "${RED}错误: 用户 '$user' 不存在于配置文件中${NC}"
-        exit 1
-    fi
-
-    local cname
-    cname=$(container_name "$user")
-
-    if ! docker_ps | grep -q "^${cname}$"; then
-        echo -e "${YELLOW}容器 $cname 未在运行${NC}"
-        return
-    fi
-
-    echo "停止容器 $cname ..."
-    docker stop "$cname"
-    echo -e "${GREEN}容器 $cname 已停止${NC}"
-}
-
-cmd_delete() {
-    local user="$1"
-    local delete_data=false
-
-    if [ "${2:-}" = "--data" ]; then
-        delete_data=true
-    fi
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --rm)   remove_container=true ;;
+            --data) remove_data=true; remove_container=true ;;
+            *) shift; continue ;;
+        esac
+        shift
+    done
 
     if ! user_exists "$user"; then
         echo -e "${RED}错误: 用户 '$user' 不存在于配置文件中${NC}"
@@ -208,23 +195,74 @@ cmd_delete() {
     local vname
     vname=$(volume_name "$user")
 
-    if docker_ps_a | grep -q "^${cname}$"; then
-        echo "删除容器 $cname ..."
-        docker rm -f "$cname" > /dev/null
-        echo -e "${GREEN}容器 $cname 已删除${NC}"
-    else
-        echo -e "${YELLOW}容器 $cname 不存在${NC}"
+    if docker_ps | grep -q "^${cname}$"; then
+        echo "停止容器 $cname ..."
+        docker stop "$cname"
+        echo -e "${GREEN}容器 $cname 已停止${NC}"
     fi
 
-    if $delete_data; then
-        if docker_vols | grep -q "^${vname}$"; then
-            echo "删除数据卷 $vname ..."
-            docker volume rm "$vname" > /dev/null
-            echo -e "${GREEN}数据卷 $vname 已删除${NC}"
-        else
-            echo -e "${YELLOW}数据卷 $vname 不存在${NC}"
+    if $remove_container; then
+        if docker_ps_a | grep -q "^${cname}$"; then
+            echo "删除容器 $cname ..."
+            docker rm "$cname" > /dev/null 2>&1 || docker rm -f "$cname" > /dev/null 2>&1 || true
+            echo -e "${GREEN}容器 $cname 已删除${NC}"
         fi
     fi
+
+    if $remove_data; then
+        if docker_vols | grep -q "^${vname}$"; then
+            echo "删除数据卷 $vname ..."
+            docker volume rm "$vname" > /dev/null 2>&1 || true
+            echo -e "${GREEN}数据卷 $vname 已删除${NC}"
+        fi
+    fi
+}
+
+cmd_add() {
+    local user="$1"
+    local password="$2"
+    local port="${3:-}"
+    local image="${4:-}"
+
+    if user_exists "$user"; then
+        echo -e "${RED}错误: 用户 '$user' 已存在${NC}"
+        exit 1
+    fi
+
+    local line="$user:$password"
+    [ -n "$port" ]  && line="$line:$port"
+    [ -n "$image" ] && line="$line:$image"
+
+    echo "$line" >> "$CONFIG_FILE"
+    echo -e "${GREEN}用户 '$user' 已添加${NC}"
+}
+
+cmd_remove() {
+    local user="$1"
+    local clean_data=false
+    if [ "${2:-}" = "--data" ]; then
+        clean_data=true
+    fi
+
+    if ! user_exists "$user"; then
+        echo -e "${RED}错误: 用户 '$user' 不存在于配置文件中${NC}"
+        exit 1
+    fi
+
+    if $clean_data; then
+        local cname vname
+        cname=$(container_name "$user")
+        vname=$(volume_name "$user")
+
+        docker stop "$cname" > /dev/null 2>&1 || true
+        docker rm -f "$cname" > /dev/null 2>&1 || true
+        docker volume rm "$vname" > /dev/null 2>&1 || true
+        echo "已清理容器和数据卷"
+    fi
+
+    # 从配置文件中移除该用户行
+    sed -i '' "/^${user}:/d" "$CONFIG_FILE"
+    echo -e "${GREEN}用户 '$user' 已从配置文件中移除${NC}"
 }
 
 cmd_restart() {
@@ -409,15 +447,16 @@ case "$COMMAND" in
         fi
         ;;
     stop)
-        [ $# -lt 1 ] && { echo -e "${RED}用法: $0 stop <username|all>${NC}"; exit 1; }
+        [ $# -lt 1 ] && { echo -e "${RED}用法: $0 stop <username|all> [--rm] [--data]${NC}"; exit 1; }
         if [ "$1" = "all" ]; then
+            shift
             get_all_users | while read -r u; do
                 echo -e "${YELLOW}=== 用户: $u ===${NC}"
-                cmd_stop "$u"
+                cmd_stop "$u" "$@"
                 echo ""
             done
         else
-            cmd_stop "$1"
+            cmd_stop "$@"
         fi
         ;;
     restart)
@@ -457,18 +496,13 @@ case "$COMMAND" in
     archives)
         cmd_archives
         ;;
-    delete)
-        [ $# -lt 1 ] && { echo -e "${RED}用法: $0 delete <username|all> [--data]${NC}"; exit 1; }
-        if [ "$1" = "all" ]; then
-            shift
-            get_all_users | while read -r u; do
-                echo -e "${YELLOW}=== 用户: $u ===${NC}"
-                cmd_delete "$u" "$@"
-                echo ""
-            done
-        else
-            cmd_delete "$@"
-        fi
+    add)
+        [ $# -lt 2 ] && { echo -e "${RED}用法: $0 add <username> <password> [port] [image]${NC}"; exit 1; }
+        cmd_add "$@"
+        ;;
+    remove)
+        [ $# -lt 1 ] && { echo -e "${RED}用法: $0 remove <username> [--data]${NC}"; exit 1; }
+        cmd_remove "$@"
         ;;
     -h|--help|help)
         usage
