@@ -6,6 +6,8 @@ CONFIG_FILE="${SIYUAN_CONFIG_FILE:-$SCRIPT_DIR/users.conf}"
 BASE_PORT=6806
 DEFAULT_IMAGE="b3log/siyuan"
 SIYUAN_PORT=6806
+PROXY_PORT=80
+NETWORK="siyuan-net"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -28,6 +30,7 @@ usage() {
   archives              列出所有备份文件
   add <user> <password> [port] [image]  添加用户到配置文件
   remove <username> [--data]  从配置文件移除用户（--data 同时清理容器和数据）
+  proxy <start|stop|restart>  管理 nginx 反向代理（统一访问入口）
 
 配置文件: $CONFIG_FILE
 格式: username:password[:port[:image]]
@@ -38,17 +41,6 @@ EOF
 # 读取配置文件，跳过空行和注释行
 read_config() {
     grep -v '^\s*#' "$CONFIG_FILE" | grep -v '^\s*$' || true
-}
-
-# 根据用户名获取用户配置行
-get_user_line() {
-    local user="$1"
-    read_config | while IFS=':' read -r u p port img; do
-        if [ "$u" = "$user" ]; then
-            echo "$u:$p:${port:-}:${img:-}"
-            return
-        fi
-    done
 }
 
 # 获取用户端口（配置中指定或自动分配）
@@ -150,12 +142,14 @@ cmd_start() {
         echo "启动已存在的容器 $cname ..."
         docker start "$cname"
     else
+        ensure_network
         # 确保 volume 存在
         docker volume create "$vname" > /dev/null 2>&1 || true
 
         echo "创建并启动容器 $cname (镜像: $image, 端口: $port) ..."
         docker run -d \
             --name "$cname" \
+            --network "$NETWORK" \
             -p "${port}:${SIYUAN_PORT}" \
             -v "${vname}:/siyuan/workspace" \
             -e SIYUAN_ACCESS_AUTH_CODE="$password" \
@@ -265,6 +259,127 @@ cmd_remove() {
     echo -e "${GREEN}用户 '$user' 已从配置文件中移除${NC}"
 }
 
+ensure_network() {
+    docker network create "$NETWORK" > /dev/null 2>&1 || true
+}
+
+nginx_dir() { echo "$SCRIPT_DIR/nginx"; }
+proxy_name() { echo "siyuan-proxy"; }
+
+# 生成 nginx 配置 — 纯端口代理，不修改内容
+generate_nginx_conf() {
+    local dir
+    dir=$(nginx_dir)
+    mkdir -p "$dir"
+    cat > "$dir/nginx.conf" <<'NGINXEOF'
+events { worker_connections 1024; }
+
+http {
+    server {
+        listen 80;
+
+        location = / {
+            default_type text/html;
+            charset utf-8;
+            return 200 '<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Siyuan Users</title>
+<style>body{font-family:sans-serif;max-width:400px;margin:60px auto;padding:20px}
+h2{margin-bottom:16px}a{display:block;padding:12px 16px;margin:6px 0;background:#f0f0f0;
+border-radius:6px;text-decoration:none;color:#333;font-size:16px}
+a:hover{background:#e0e0e0}</style></head><body>
+<h2>思源笔记用户列表</h2>
+NGINXEOF
+
+    read_config | while IFS=':' read -r u p port img; do
+        local assigned_port
+        assigned_port=$(get_user_port "$u")
+        cat >> "$dir/nginx.conf" <<LOCATIONEOF
+<a href="/siyuan/$u">$u (:$assigned_port)</a>
+LOCATIONEOF
+    done
+
+    cat >> "$dir/nginx.conf" <<'NGINXEOF'
+</body></html>';
+        }
+
+NGINXEOF
+
+    read_config | while IFS=':' read -r u p port img; do
+        local assigned_port
+        assigned_port=$(get_user_port "$u")
+        cat >> "$dir/nginx.conf" <<LOCATIONEOF
+
+        location /siyuan/$u {
+            return 301 http://\$host:$assigned_port;
+        }
+LOCATIONEOF
+    done
+
+    cat >> "$dir/nginx.conf" <<'NGINXEOF'
+    }
+}
+NGINXEOF
+}
+
+cmd_proxy() {
+    local action="$1"
+    local cname
+    cname=$(proxy_name)
+    local dir
+    dir=$(nginx_dir)
+
+    case "$action" in
+        start)
+            ensure_network
+            generate_nginx_conf
+
+            if docker_ps | grep -q "^${cname}$"; then
+                echo -e "${YELLOW}代理 $cname 已在运行中${NC}"
+                return
+            fi
+
+            if docker_ps_a | grep -q "^${cname}$"; then
+                echo "启动已存在的代理容器..."
+                docker start "$cname"
+            else
+                echo "创建并启动 nginx 代理 (端口: $PROXY_PORT) ..."
+                docker run -d \
+                    --name "$cname" \
+                    --network "$NETWORK" \
+                    -p "${PROXY_PORT}:80" \
+                    -v "$dir/nginx.conf:/etc/nginx/nginx.conf:ro" \
+                    --restart unless-stopped \
+                    nginx:alpine
+            fi
+
+            echo -e "${GREEN}代理启动成功${NC}"
+            echo ""
+            echo "通过以下地址访问各用户笔记:"
+            read_config | while IFS=':' read -r u p port img; do
+                echo "  http://localhost:$PROXY_PORT/siyuan/$u/"
+            done
+            ;;
+        stop)
+            if docker_ps | grep -q "^${cname}$"; then
+                echo "停止代理容器 $cname ..."
+                docker stop "$cname"
+                echo -e "${GREEN}代理已停止${NC}"
+            else
+                echo -e "${YELLOW}代理未在运行${NC}"
+            fi
+            ;;
+        restart)
+            cmd_proxy stop
+            echo ""
+            cmd_proxy start
+            ;;
+        *)
+            echo -e "${RED}用法: $0 proxy <start|stop|restart>${NC}"
+            exit 1
+            ;;
+    esac
+}
+
 cmd_restart() {
     local user="$1"
     cmd_stop "$user"
@@ -294,14 +409,21 @@ cmd_status() {
 }
 
 cmd_list() {
-    printf "%-15s %-8s %-30s\n" "用户名" "端口" "访问地址"
-    printf "%-15s %-8s %-30s\n" "-----" "----" "--------"
+    local proxy_running=false
+    docker_ps | grep -q "^$(proxy_name)$" && proxy_running=true
+
+    printf "%-15s %-8s %-30s %-20s\n" "用户名" "端口" "访问地址" "镜像"
+    printf "%-15s %-8s %-30s %-20s\n" "-----" "----" "--------" "----"
 
     read_config | while IFS=':' read -r u p port img; do
         local assigned_port
         assigned_port=$(get_user_port "$u")
         local img_display="${img:-$DEFAULT_IMAGE}"
-        printf "%-15s %-8s http://localhost:%s  (%s)\n" "$u" "$assigned_port" "$assigned_port" "$img_display"
+        if $proxy_running; then
+            printf "%-15s %-8s http://localhost:%s  %-20s\n" "$u" "$assigned_port" "http://localhost:$PROXY_PORT/siyuan/$u/" "$img_display"
+        else
+            printf "%-15s %-8s http://localhost:%s  %-20s\n" "$u" "$assigned_port" "$assigned_port" "$img_display"
+        fi
     done
 }
 
@@ -503,6 +625,10 @@ case "$COMMAND" in
     remove)
         [ $# -lt 1 ] && { echo -e "${RED}用法: $0 remove <username> [--data]${NC}"; exit 1; }
         cmd_remove "$@"
+        ;;
+    proxy)
+        [ $# -lt 1 ] && { echo -e "${RED}用法: $0 proxy <start|stop|restart>${NC}"; exit 1; }
+        cmd_proxy "$1"
         ;;
     -h|--help|help)
         usage
