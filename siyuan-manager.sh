@@ -101,7 +101,6 @@ get_all_users() {
     done
 }
 
-# 读取额外端口映射配置 label:port[:path]
 # 检查端口是否可用
 port_available() {
     local port="$1"
@@ -115,6 +114,7 @@ port_available() {
     fi
 }
 
+# 读取额外端口映射配置（标签:端口[:路径] 或 标签:URL）
 read_extras() {
     [ -f "$EXTRAS_FILE" ] && grep -v '^\s*#' "$EXTRAS_FILE" | grep -v '^\s*$' || true
 }
@@ -377,10 +377,22 @@ HEADEOF
     # extras 额外链接
     if [ -f "$EXTRAS_FILE" ] && [ -n "$(read_extras)" ]; then
         echo '<hr><h3>其他服务</h3>' >> "$index_html"
-        read_extras | while IFS=':' read -r label port path; do
-            local slug
-            slug=$(echo "$label" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//')
-            echo "<a class=\"block\" href=\"/e/$slug\">$label <span style=\"color:#999;font-size:14px\">:$port${path:-}</span></a>" >> "$index_html"
+        read_extras | while IFS=':' read -r label a b; do
+            local href suffix
+            local full="${a}:${b}"
+            case "$full" in
+                http://*|https://*)
+                    href="$full"
+                    suffix=$(echo "$full" | sed 's|^https\?://||')
+                    ;;
+                *)
+                    local slug
+                    slug=$(echo "$label" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//')
+                    href="/e/$slug"
+                    suffix=":$a${b:+:$b}"
+                    ;;
+            esac
+            echo "<a class=\"block\" href=\"$href\">$label <span style=\"color:#999;font-size:14px\">$suffix</span></a>" >> "$index_html"
         done
     fi
 
@@ -417,17 +429,23 @@ NGINXEOF
 LOCATIONEOF
     done
 
-    # extras 重定向
+    # extras 重定向（仅本地端口）
     if [ -f "$EXTRAS_FILE" ]; then
-        read_extras | while IFS=':' read -r label port path; do
-            local slug
-            slug=$(echo "$label" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//')
-            cat >> "$dir/nginx.conf" <<LOCATIONEOF
+        read_extras | while IFS=':' read -r label a b; do
+            local full="${a}:${b}"
+            case "$full" in
+                http://*|https://*) ;;  # 外部 URL 不需要 nginx 重定向
+                *)
+                    local slug
+                    slug=$(echo "$label" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//')
+                    cat >> "$dir/nginx.conf" <<LOCATIONEOF
 
         location /e/$slug {
-            return 301 http://\$host:$port${path:-};
+            return 301 http://\$host:$a${b:+:$b};
         }
 LOCATIONEOF
+                    ;;
+            esac
         done
     fi
 

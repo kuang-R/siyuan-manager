@@ -24,6 +24,9 @@ charlie:mypw:6812:custom/siyuan:v3      # 全自定义
 # 标签:端口[:路径]
 监控面板:8080
 文件管理:9000:/files
+
+# 标签:URL — 外部服务器
+外部服务:https://example.com/api
 ```
 
 ## 命令
@@ -68,4 +71,5 @@ charlie:mypw:6812:custom/siyuan:v3      # 全自定义
 - 脚本使用 `set -euo pipefail`，管道中使用 `grep -q` 需配合 `|| true` 包裹左侧命令（参见 `docker_ps` 等包装函数），否则 SIGPIPE 会导致管道失败
 - 通配符使用 `all` 而非 `*`，避免 shell glob 展开
 - 配置文件中密码明文存储，权限需设为 600
+- 启动时检测端口占用，避免与已有服务冲突
 - 可通过环境变量 `SIYUAN_CONFIG_FILE` 和 `SIYUAN_BACKUP_DIR` 覆盖配置和备份路径
