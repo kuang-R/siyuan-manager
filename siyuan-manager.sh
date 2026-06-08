@@ -102,6 +102,19 @@ get_all_users() {
 }
 
 # 读取额外端口映射配置 label:port[:path]
+# 检查端口是否可用
+port_available() {
+    local port="$1"
+    # 检查宿主机端口是否被占用（兼容 Linux/macOS）
+    if command -v ss &>/dev/null; then
+        ! ss -tlnp 2>/dev/null | grep -q ":$port "
+    elif command -v lsof &>/dev/null; then
+        ! lsof -i ":$port" -sTCP:LISTEN &>/dev/null
+    else
+        true
+    fi
+}
+
 read_extras() {
     [ -f "$EXTRAS_FILE" ] && grep -v '^\s*#' "$EXTRAS_FILE" | grep -v '^\s*$' || true
 }
@@ -179,6 +192,11 @@ cmd_start() {
     vname=$(volume_name "$user")
 
     # 检查容器是否已在运行
+    if ! port_available "$port" && ! docker_ps_a | grep -q "^${cname}$"; then
+        echo -e "${RED}错误: 端口 $port 已被占用${NC}"
+        exit 1
+    fi
+
     if docker_ps | grep -q "^${cname}$"; then
         echo -e "${YELLOW}容器 $cname 已在运行中${NC}"
         echo "访问地址: http://localhost:$port"
