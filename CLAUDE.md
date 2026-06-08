@@ -3,12 +3,12 @@
 ## 文件结构
 
 - `siyuan-manager.sh` — 主管理脚本
-- `users.conf` — 用户配置文件（权限 600）
+- `users.conf.example` — 用户配置文件模板，使用时复制为 `users.conf`（权限 600）
+- `extras.conf.example` — 额外端口映射模板，使用时复制为 `extras.conf`
 - `test.sh` — 测试脚本（60 项，全部 mock Docker 命令）
 - `index.md` — 首页 Markdown 内容（可选）
-- `extras.conf` — 额外端口映射（可选）
 - `images/` — 本地镜像 tar（`b3log-siyuan.tar`, `nginx-alpine.tar`, `alpine.tar`），linux/amd64
-- `.gitignore` — 忽略测试临时目录、备份目录、nginx 配置
+- `.gitignore` — 忽略测试临时目录、备份目录、nginx 配置、本地配置文件
 
 ## 配置文件格式
 

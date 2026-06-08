@@ -4,3 +4,5 @@ backups/
 .test-backups/
 nginx/
 images/
+users.conf
+extras.conf

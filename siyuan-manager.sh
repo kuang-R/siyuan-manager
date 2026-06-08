@@ -671,6 +671,9 @@ fi
 # 检查配置文件
 if [ ! -f "$CONFIG_FILE" ]; then
     echo -e "${RED}错误: 配置文件 $CONFIG_FILE 不存在${NC}"
+    if [ -f "$SCRIPT_DIR/users.conf.example" ]; then
+        echo "提示: cp $SCRIPT_DIR/users.conf.example $CONFIG_FILE"
+    fi
     exit 1
 fi
 
