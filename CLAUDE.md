@@ -5,6 +5,8 @@
 - `siyuan-manager.sh` — 主管理脚本
 - `users.conf` — 用户配置文件（权限 600）
 - `test.sh` — 测试脚本（60 项）
+- `index.md` — 首页 Markdown 内容（可选）
+- `extras.conf` — 额外端口映射（可选）
 - `.gitignore` — 忽略测试临时目录、备份目录、nginx 配置
 
 ## 配置文件格式
@@ -14,6 +16,14 @@
 alice:pass123                           # 自动分配端口，默认镜像
 bob:bob456:6810                         # 指定端口
 charlie:mypw:6812:custom/siyuan:v3      # 全自定义
+```
+
+## extras.conf 格式
+
+```
+# 标签:端口[:路径]
+监控面板:8080
+文件管理:9000:/files
 ```
 
 ## 命令
@@ -50,6 +60,8 @@ charlie:mypw:6812:custom/siyuan:v3      # 全自定义
 - 首页 `/` 展示所有用户列表，点击跳转到对应端口
 - `/siyuan/{user}` 301 重定向到 `http://host:{port}`，不修改思源内容
 - 思源笔记不支持子路径部署（无 servePath），因此采用端口重定向而非路径代理
+- 支持 `index.md` 自定义首页内容（Markdown 自动转 HTML）
+- 支持 `extras.conf` 映射其他端口到首页（格式：`标签:端口[:路径]`）
 
 ## 注意事项
 

@@ -3,6 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG_FILE="${SIYUAN_CONFIG_FILE:-$SCRIPT_DIR/users.conf}"
+EXTRAS_FILE="$SCRIPT_DIR/extras.conf"
+INDEX_MD="$SCRIPT_DIR/index.md"
 BASE_PORT=6806
 DEFAULT_IMAGE="b3log/siyuan"
 SIYUAN_PORT=6806
@@ -97,6 +99,51 @@ get_all_users() {
     read_config | while IFS=':' read -r u p port img; do
         echo "$u"
     done
+}
+
+# 读取额外端口映射配置 label:port[:path]
+read_extras() {
+    [ -f "$EXTRAS_FILE" ] && grep -v '^\s*#' "$EXTRAS_FILE" | grep -v '^\s*$' || true
+}
+
+# 简单 Markdown → HTML 转换
+md_to_html() {
+    [ ! -f "$INDEX_MD" ] && return
+    local in_list=false
+    while IFS= read -r line; do
+        if [ -z "$line" ]; then
+            if $in_list; then echo '</ul>'; in_list=false; fi
+            continue
+        fi
+        case "$line" in
+            '### '*)
+                if $in_list; then echo '</ul>'; in_list=false; fi
+                line="${line#\#\#\# }"
+                echo "<h4>$(echo "$line" | sed 's/</\&lt;/g; s/>/\&gt;/g')</h4>"
+                ;;
+            '## '*)
+                if $in_list; then echo '</ul>'; in_list=false; fi
+                line="${line#\#\# }"
+                echo "<h3>$(echo "$line" | sed 's/</\&lt;/g; s/>/\&gt;/g')</h3>"
+                ;;
+            '# '*)
+                if $in_list; then echo '</ul>'; in_list=false; fi
+                line="${line#\# }"
+                echo "<h2>$(echo "$line" | sed 's/</\&lt;/g; s/>/\&gt;/g')</h2>"
+                ;;
+            '- '*)
+                $in_list || { echo '<ul>'; in_list=true; }
+                line="${line#- }"
+                echo "<li>$(echo "$line" | sed 's/</\&lt;/g; s/>/\&gt;/g')</li>"
+                ;;
+            *)
+                if $in_list; then echo '</ul>'; in_list=false; fi
+                line=$(echo "$line" | sed 's/</\&lt;/g; s/>/\&gt;/g; s/\[\([^]]*\)\](\([^)]*\))/<a href="\2">\1<\/a>/g; s/`\([^`]*\)`/<code>\1<\/code>/g')
+                echo "<p>$line</p>"
+                ;;
+        esac
+    done < "$INDEX_MD"
+    if $in_list; then echo '</ul>'; fi
 }
 
 # Docker 命令包装，末尾 || true 防止 pipefail + grep -q 时 SIGPIPE 导致管道失败
@@ -273,11 +320,57 @@ ensure_network() {
 nginx_dir() { echo "$SCRIPT_DIR/nginx"; }
 proxy_name() { echo "siyuan-proxy"; }
 
-# 生成 nginx 配置 — 纯端口代理，不修改内容
+# 生成 nginx 配置
 generate_nginx_conf() {
     local dir
     dir=$(nginx_dir)
     mkdir -p "$dir"
+
+    # 生成首页 HTML（通过独立文件，方便嵌入 markdown 和 extras）
+    local index_html="$dir/index.html"
+    cat > "$index_html" <<'HEADEOF'
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Siyuan</title>
+<style>body{font-family:sans-serif;max-width:600px;margin:60px auto;padding:20px}
+h2,h3,h4{color:#333;margin:16px 0 8px}
+a.block{display:block;padding:12px 16px;margin:4px 0;background:#f0f0f0;
+border-radius:6px;text-decoration:none;color:#333;font-size:16px}
+a.block:hover{background:#e0e0e0}
+p{color:#555;line-height:1.6}
+ul{margin:4px 0;padding-left:20px}
+li{margin:2px 0}code{background:#eee;padding:1px 4px;border-radius:3px}
+hr{margin:20px 0;border:none;border-top:1px solid #eee}
+</style></head><body>
+HEADEOF
+
+    # 插入 index.md 内容
+    if [ -f "$INDEX_MD" ]; then
+        md_to_html >> "$index_html"
+    fi
+
+    # 思源用户列表
+    echo '<h2>思源笔记</h2>' >> "$index_html"
+    read_config | while IFS=':' read -r u p port img; do
+        local assigned_port
+        assigned_port=$(get_user_port "$u")
+        echo "<a class=\"block\" href=\"/siyuan/$u\">$u <span style=\"color:#999;font-size:14px\">:$assigned_port</span></a>" >> "$index_html"
+    done
+
+    # extras 额外链接
+    if [ -f "$EXTRAS_FILE" ] && [ -n "$(read_extras)" ]; then
+        echo '<hr><h3>其他服务</h3>' >> "$index_html"
+        read_extras | while IFS=':' read -r label port path; do
+            local slug
+            slug=$(echo "$label" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//')
+            echo "<a class=\"block\" href=\"/e/$slug\">$label <span style=\"color:#999;font-size:14px\">:$port${path:-}</span></a>" >> "$index_html"
+        done
+    fi
+
+    cat >> "$index_html" <<'HEADEOF'
+</body></html>
+HEADEOF
+
+    # 生成 nginx.conf
     cat > "$dir/nginx.conf" <<'NGINXEOF'
 events { worker_connections 1024; }
 
@@ -286,31 +379,15 @@ http {
         listen 80;
 
         location = / {
+            root /homepage;
+            try_files /index.html =404;
             default_type text/html;
             charset utf-8;
-            return 200 '<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Siyuan Users</title>
-<style>body{font-family:sans-serif;max-width:400px;margin:60px auto;padding:20px}
-h2{margin-bottom:16px}a{display:block;padding:12px 16px;margin:6px 0;background:#f0f0f0;
-border-radius:6px;text-decoration:none;color:#333;font-size:16px}
-a:hover{background:#e0e0e0}</style></head><body>
-<h2>思源笔记用户列表</h2>
-NGINXEOF
-
-    read_config | while IFS=':' read -r u p port img; do
-        local assigned_port
-        assigned_port=$(get_user_port "$u")
-        cat >> "$dir/nginx.conf" <<LOCATIONEOF
-<a href="/siyuan/$u">$u (:$assigned_port)</a>
-LOCATIONEOF
-    done
-
-    cat >> "$dir/nginx.conf" <<'NGINXEOF'
-</body></html>';
         }
 
 NGINXEOF
 
+    # siyuan 重定向
     read_config | while IFS=':' read -r u p port img; do
         local assigned_port
         assigned_port=$(get_user_port "$u")
@@ -321,6 +398,20 @@ NGINXEOF
         }
 LOCATIONEOF
     done
+
+    # extras 重定向
+    if [ -f "$EXTRAS_FILE" ]; then
+        read_extras | while IFS=':' read -r label port path; do
+            local slug
+            slug=$(echo "$label" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//')
+            cat >> "$dir/nginx.conf" <<LOCATIONEOF
+
+        location /e/$slug {
+            return 301 http://\$host:$port${path:-};
+        }
+LOCATIONEOF
+        done
+    fi
 
     cat >> "$dir/nginx.conf" <<'NGINXEOF'
     }
@@ -367,6 +458,7 @@ ensure_proxy() {
             --name "$cname" \
             -p "${PROXY_PORT}:80" \
             -v "$dir/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            -v "$dir/index.html:/homepage/index.html:ro" \
             --restart unless-stopped \
             nginx:alpine > /dev/null
     fi
