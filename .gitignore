@@ -1,4 +1,6 @@
+.DS_Store
 .test-tmp/
 backups/
 .test-backups/
 nginx/
+images/

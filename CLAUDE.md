@@ -4,9 +4,10 @@
 
 - `siyuan-manager.sh` — 主管理脚本
 - `users.conf` — 用户配置文件（权限 600）
-- `test.sh` — 测试脚本（60 项）
+- `test.sh` — 测试脚本（60 项，全部 mock Docker 命令）
 - `index.md` — 首页 Markdown 内容（可选）
 - `extras.conf` — 额外端口映射（可选）
+- `images/` — 本地镜像 tar（`b3log-siyuan.tar`, `nginx-alpine.tar`, `alpine.tar`），linux/amd64
 - `.gitignore` — 忽略测试临时目录、备份目录、nginx 配置
 
 ## 配置文件格式
@@ -48,12 +49,14 @@ charlie:mypw:6812:custom/siyuan:v3      # 全自定义
 
 - 每个用户独立容器 `siyuan-{username}` 和 volume `siyuan-data-{username}`
 - 基础端口 6806，按配置顺序递增，也可在配置文件中指定
-- 默认镜像 `b3log/siyuan`，可配置自定义镜像
+- 镜像统一在脚本头部变量定义：`DEFAULT_IMAGE`（思源）、`NGINX_IMAGE`（代理）、`ALPINE_IMAGE`（备份/恢复）
 - 容器参数：`--workspace=/siyuan/workspace --lang=zh_CN`
 - 访问授权码通过环境变量 `SIYUAN_ACCESS_AUTH_CODE` 传入（值为密码）
 - 数据通过 Docker volume 持久化，容器删除后数据不丢失
 - 通过 `add`/`remove` 命令管理用户配置，`remove --data` 会同时清理容器和数据卷
 - 容器加入 `siyuan-net` 网络，便于容器间通信
+- `read_user_fields` 一次读取用户所有字段（端口、镜像、密码），避免重复解析配置文件
+- `with_users` 统一处理 `all` 和单用户分发逻辑
 
 ## nginx 代理
 

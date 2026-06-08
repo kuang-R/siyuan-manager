@@ -7,6 +7,8 @@ EXTRAS_FILE="$SCRIPT_DIR/extras.conf"
 INDEX_MD="$SCRIPT_DIR/index.md"
 BASE_PORT=6806
 DEFAULT_IMAGE="b3log/siyuan"
+NGINX_IMAGE="nginx:alpine"
+ALPINE_IMAGE="alpine"
 SIYUAN_PORT=6806
 PROXY_PORT=80
 NETWORK="siyuan-net"
@@ -63,30 +65,32 @@ get_user_port() {
     done
 }
 
-# 获取用户镜像（配置中指定或默认）
-get_user_image() {
-    local target="$1"
+# 一次读取用户的所有字段，避免多次遍历配置文件
+# 输出格式: port image password
+read_user_fields() {
+    local target="$1" idx=0
     read_config | while IFS=':' read -r u p port img; do
         if [ "$u" = "$target" ]; then
-            if [ -n "${img:-}" ]; then
-                echo "$img"
-            else
-                echo "$DEFAULT_IMAGE"
-            fi
+            echo "${port:-$((BASE_PORT + idx))} ${img:-$DEFAULT_IMAGE} $p"
             return
         fi
+        idx=$((idx + 1))
     done
 }
 
-# 获取用户密码
-get_user_password() {
-    local target="$1"
-    read_config | while IFS=':' read -r u p port img; do
-        if [ "$u" = "$target" ]; then
-            echo "$p"
-            return
-        fi
-    done
+# 统一处理 all 和单用户分发
+with_users() {
+    local cmd="$1" user="$2"
+    shift 2
+    if [ "$user" = "all" ]; then
+        get_all_users | while read -r u; do
+            echo -e "${YELLOW}=== 用户: $u ===${NC}"
+            "$cmd" "$u" "$@"
+            echo ""
+        done
+    else
+        "$cmd" "$user" "$@"
+    fi
 }
 
 # 检查用户是否存在于配置文件中
@@ -180,12 +184,8 @@ cmd_start() {
         exit 1
     fi
 
-    local port
-    port=$(get_user_port "$user")
-    local image
-    image=$(get_user_image "$user")
-    local password
-    password=$(get_user_password "$user")
+    local port image password
+    read -r port image password <<< "$(read_user_fields "$user")"
     local cname
     cname=$(container_name "$user")
     local vname
@@ -496,7 +496,7 @@ ensure_proxy() {
             -v "$dir/nginx.conf:/etc/nginx/nginx.conf:ro" \
             -v "$dir/index.html:/homepage/index.html:ro" \
             --restart unless-stopped \
-            nginx:alpine > /dev/null
+            $NGINX_IMAGE > /dev/null
     fi
 
     echo -e "${GREEN}nginx 代理已就绪: http://localhost:$PROXY_PORT${NC}"
@@ -581,7 +581,7 @@ cmd_archive() {
     docker run --rm \
         -v "${vname}:/data" \
         -v "$BACKUP_DIR:/backup" \
-        alpine \
+        $ALPINE_IMAGE \
         tar czf "/backup/$(basename "$backup_file")" -C /data .
 
     echo -e "${GREEN}备份完成: $backup_file${NC}"
@@ -620,14 +620,14 @@ cmd_restore() {
 
     # 清空 volume 数据
     echo "清空现有数据..."
-    docker run --rm -v "${vname}:/data" alpine sh -c 'rm -rf /data/* /data/.[!.]* /data/..?* 2>/dev/null || true'
+    docker run --rm -v "${vname}:/data" $ALPINE_IMAGE sh -c 'rm -rf /data/* /data/.[!.]* /data/..?* 2>/dev/null || true'
 
     # 恢复数据
     echo "正在从 $backup_file 恢复数据..."
     docker run --rm \
         -v "${vname}:/data" \
         -v "$(dirname "$backup_file"):/backup:ro" \
-        alpine \
+        $ALPINE_IMAGE \
         tar xzf "/backup/$(basename "$backup_file")" -C /data
 
     echo -e "${GREEN}数据恢复完成${NC}"
@@ -680,40 +680,15 @@ shift
 case "$COMMAND" in
     start)
         [ $# -lt 1 ] && { echo -e "${RED}用法: $0 start <username|all>${NC}"; exit 1; }
-        if [ "$1" = "all" ]; then
-            get_all_users | while read -r u; do
-                echo -e "${YELLOW}=== 用户: $u ===${NC}"
-                cmd_start "$u"
-                echo ""
-            done
-        else
-            cmd_start "$1"
-        fi
+        with_users cmd_start "$@"
         ;;
     stop)
         [ $# -lt 1 ] && { echo -e "${RED}用法: $0 stop <username|all> [--rm] [--data]${NC}"; exit 1; }
-        if [ "$1" = "all" ]; then
-            shift
-            get_all_users | while read -r u; do
-                echo -e "${YELLOW}=== 用户: $u ===${NC}"
-                cmd_stop "$u" "$@"
-                echo ""
-            done
-        else
-            cmd_stop "$@"
-        fi
+        with_users cmd_stop "$@"
         ;;
     restart)
         [ $# -lt 1 ] && { echo -e "${RED}用法: $0 restart <username|all>${NC}"; exit 1; }
-        if [ "$1" = "all" ]; then
-            get_all_users | while read -r u; do
-                echo -e "${YELLOW}=== 用户: $u ===${NC}"
-                cmd_restart "$u"
-                echo ""
-            done
-        else
-            cmd_restart "$1"
-        fi
+        with_users cmd_restart "$@"
         ;;
     status)
         cmd_status
@@ -723,15 +698,7 @@ case "$COMMAND" in
         ;;
     archive)
         [ $# -lt 1 ] && { echo -e "${RED}用法: $0 archive <username|all>${NC}"; exit 1; }
-        if [ "$1" = "all" ]; then
-            get_all_users | while read -r u; do
-                echo -e "${YELLOW}=== 用户: $u ===${NC}"
-                cmd_archive "$u"
-                echo ""
-            done
-        else
-            cmd_archive "$1"
-        fi
+        with_users cmd_archive "$@"
         ;;
     restore)
         [ $# -lt 2 ] && { echo -e "${RED}用法: $0 restore <username> <备份文件>${NC}"; exit 1; }
