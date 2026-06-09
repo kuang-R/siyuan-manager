@@ -62,6 +62,7 @@ run_script() {
     >"$TMP/output.txt"
     PATH="$TMP/bin:$PATH" \
     SIYUAN_CONFIG_FILE="$TMP/test-users.conf" \
+    SIYUAN_EXTRAS_FILE="$TMP/test-extras.conf" \
     SIYUAN_BACKUP_DIR="$TMP/backups" \
     bash "$SCRIPT" "$@" >>"$TMP/output.txt" 2>&1 || true
 }
@@ -387,7 +388,7 @@ alice:pass1
 CFGEOF
 
 # 创建 extras.conf 含中文标签
-cat > "$TEST_DIR/extras.conf" <<'EXTRAF'
+cat > "$TMP/test-extras.conf" <<'EXTRAF'
 监控面板:8080
 文件管理:9000:/files
 外部服务:https://example.com/api
@@ -401,7 +402,7 @@ assert_not_contains "$nginx_conf" "location /e/ {" "extras 中文标签 slug 不
 assert_not_contains "$nginx_conf" '[0-9]:/' "extras 重定向 URL 无多余冒号"
 
 # 清理
-rm -f "$TEST_DIR/extras.conf" "$TEST_DIR/nginx/nginx.conf"
+rm -f "$TMP/test-extras.conf" "$TEST_DIR/nginx/nginx.conf"
 
 echo ""
 echo "=========================================="

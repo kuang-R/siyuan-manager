@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG_FILE="${SIYUAN_CONFIG_FILE:-$SCRIPT_DIR/users.conf}"
-EXTRAS_FILE="$SCRIPT_DIR/extras.conf"
+EXTRAS_FILE="${SIYUAN_EXTRAS_FILE:-$SCRIPT_DIR/extras.conf}"
 INDEX_MD="$SCRIPT_DIR/index.md"
 BASE_PORT=6806
 DEFAULT_IMAGE="b3log/siyuan"
