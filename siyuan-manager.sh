@@ -520,8 +520,8 @@ ensure_proxy() {
         docker run -d \
             --name "$cname" \
             -p "${PROXY_PORT}:80" \
-            -v "$dir/nginx.conf:/etc/nginx/nginx.conf:ro" \
-            -v "$dir/index.html:/homepage/index.html:ro" \
+            -v "$dir/nginx.conf:/etc/nginx/nginx.conf:ro,z" \
+            -v "$dir/index.html:/homepage/index.html:ro,z" \
             --restart unless-stopped \
             $NGINX_IMAGE > /dev/null
     fi
