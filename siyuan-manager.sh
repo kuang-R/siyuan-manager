@@ -388,8 +388,9 @@ HEADEOF
                 *)
                     local slug
                     slug=$(echo "$label" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//')
+                    [ -z "$slug" ] && slug=$(echo "$label" | cksum | cut -d' ' -f1)
                     href="/e/$slug"
-                    suffix=":$a${b:+:$b}"
+                    suffix=":$a$b"
                     ;;
             esac
             echo "<a class=\"block\" href=\"$href\">$label <span style=\"color:#999;font-size:14px\">$suffix</span></a>" >> "$index_html"
@@ -438,10 +439,11 @@ LOCATIONEOF
                 *)
                     local slug
                     slug=$(echo "$label" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//')
+                    [ -z "$slug" ] && slug=$(echo "$label" | cksum | cut -d' ' -f1)
                     cat >> "$dir/nginx.conf" <<LOCATIONEOF
 
         location /e/$slug {
-            return 301 http://\$host:$a${b:+:$b};
+            return 301 http://\$host:$a$b;
         }
 LOCATIONEOF
                     ;;

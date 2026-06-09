@@ -5,10 +5,11 @@
 - `siyuan-manager.sh` — 主管理脚本
 - `users.conf.example` — 用户配置文件模板，使用时复制为 `users.conf`（权限 600）
 - `extras.conf.example` — 额外端口映射模板，使用时复制为 `extras.conf`
-- `test.sh` — 测试脚本（60 项，mock Docker/ss/lsof 命令）
+- `test.sh` — 测试脚本（62 项，mock Docker/ss/lsof 命令）
 - `index.md` — 首页 Markdown 内容（可选）
 - `images/` — 本地镜像 tar（`b3log-siyuan.tar`, `nginx-alpine.tar`, `alpine.tar`），linux/amd64
 - `.gitignore` — 忽略测试临时目录、备份目录、nginx 配置、本地配置文件
+- `.gitattributes` — 强制 `.sh` 文件 LF 换行，避免 Git for Windows 自动转换为 CRLF 导致 WSL/Linux 无法运行
 
 ## 配置文件格式
 
@@ -69,10 +70,13 @@ charlie:mypw:6812:custom/siyuan:v3      # 全自定义
 - 思源笔记不支持子路径部署（无 servePath），因此采用端口重定向而非路径代理
 - 支持 `index.md` 自定义首页内容（Markdown 自动转 HTML）
 - 支持 `extras.conf` 映射其他端口到首页（格式：`标签:端口[:路径]`）
+- 标签为纯中文等非 ASCII 字符时，slug 使用 `cksum` 哈希作为回退（避免 slug 为空导致链接变成 `/e/`）
+- extras 路径 `[:路径]` 自带 `/`，重定向 URL 直接用 `$a$b` 拼接，不加额外冒号
 
 ## 注意事项
 
 - 脚本使用 `set -euo pipefail`，管道中使用 `grep -q` 需配合 `|| true` 包裹左侧命令（参见 `docker_ps` 等包装函数），否则 SIGPIPE 会导致管道失败
+- `set -e` 下 `[ -z "$x" ] && ...` 安全：`&&` / `||` 链中除最后一个命令外不受 `set -e` 影响
 - 通配符使用 `all` 而非 `*`，避免 shell glob 展开
 - 配置文件中密码明文存储，权限需设为 600
 - 启动时检测端口占用，避免与已有服务冲突
@@ -82,3 +86,5 @@ charlie:mypw:6812:custom/siyuan:v3      # 全自定义
   - `sed` 使用 `> tmp && mv` 代替 `-i`（BSD/GNU 语法差异）
   - `grep` 空格匹配使用 `[[:space:]]` 代替 `\s`（POSIX 兼容）
   - 扩展正则统一使用 `-E`
+  - 哈希使用 `cksum`（POSIX），不依赖 `md5sum`/`md5`（Linux/macOS 不通用）
+- `.gitattributes` 强制 `*.sh text eol=lf`，配合 `* text=auto` 确保跨平台换行符正确

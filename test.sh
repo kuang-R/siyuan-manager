@@ -362,6 +362,33 @@ assert_contains "$o" "6806" "第1个用户 6806"
 assert_contains "$o" "6807" "第2个用户 6807"
 assert_contains "$o" "6808" "第3个用户 6808"
 
+# ---- extras 中文标签 slug ----
+echo ""
+echo -e "${YELLOW}[extras 中文标签]${NC}"
+
+# 纯中文标签 slug 不应为空（否则链接变成 /e/）
+setup
+cat > "$TMP/test-users.conf" <<'CFGEOF'
+alice:pass1
+CFGEOF
+
+# 创建 extras.conf 含中文标签
+cat > "$TEST_DIR/extras.conf" <<'EXTRAF'
+监控面板:8080
+文件管理:9000:/files
+外部服务:https://example.com/api
+EXTRAF
+
+run_script start alice; o=$(out)
+
+# 验证 nginx 配置中不存在空的 /e/ 路径
+nginx_conf=$(cat "$TEST_DIR/nginx/nginx.conf" 2>/dev/null || echo '')
+assert_not_contains "$nginx_conf" "location /e/ {" "extras 中文标签 slug 不为空"
+assert_not_contains "$nginx_conf" '[0-9]:/' "extras 重定向 URL 无多余冒号"
+
+# 清理
+rm -f "$TEST_DIR/extras.conf" "$TEST_DIR/nginx/nginx.conf"
+
 echo ""
 echo "=========================================="
 echo -e "  结果: ${GREEN}$PASS 通过${NC}, ${RED}$FAIL 失败${NC}"
