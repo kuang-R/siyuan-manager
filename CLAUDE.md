@@ -1,5 +1,7 @@
 思源笔记多用户 Docker 管理脚本，用于多人共享同一台服务器运行思源笔记。兼容 Linux 和 macOS。
 
+**运行环境**：CentOS 7 服务器，**开发环境**：macOS。
+
 ## 文件结构
 
 - `siyuan-manager.sh` — 主管理脚本
