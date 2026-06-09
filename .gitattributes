@@ -1,0 +1,4 @@
+* text=auto
+
+# Shell scripts must use LF for WSL/Linux compatibility
+*.sh text eol=lf
