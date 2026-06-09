@@ -32,13 +32,13 @@ usage() {
   archive <username|all>  备份指定用户的数据（all 表示所有用户）
   restore <username> <file>  从备份文件恢复用户数据
   archives              列出所有备份文件
-  add <user> <password> [port] [image]  添加用户到配置文件
+  add <user> <password> [port] [image] [display_name]  添加用户到配置文件
   remove <username> [--data]  从配置文件移除用户（--data 同时清理容器和数据）
 
 注: nginx 代理会自动管理，无需手动操作
 
 配置文件: $CONFIG_FILE
-格式: username:password[:port[:image]]
+格式: username:password[:port[:image[:display_name]]]
 EOF
     exit 0
 }
@@ -66,15 +66,27 @@ get_user_port() {
 }
 
 # 一次读取用户的所有字段，避免多次遍历配置文件
-# 输出格式: port image password
+# 输出格式: port image password display_name
 read_user_fields() {
     local target="$1" idx=0
-    while IFS=':' read -r u p port img; do
-        if [ "$u" = "$target" ]; then
-            echo "${port:-$((BASE_PORT + idx))} ${img:-$DEFAULT_IMAGE} $p"
-            return
+    while read -r line; do
+        IFS=':' read -ra f <<< "$line"
+        local u="${f[0]}"
+        if [ "$u" != "$target" ]; then
+            idx=$((idx + 1))
+            continue
         fi
-        idx=$((idx + 1))
+        local p="${f[1]:-}"
+        local port="${f[2]:-}"
+        local img="${f[3]:-}"
+        local display_name="${f[4]:-}"
+        # 启发式：如果 display_name 匹配镜像 tag 模式，合并回 img
+        if [ -n "$display_name" ] && [ -n "$img" ] && echo "$display_name" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9._-]{0,30}$'; then
+            img="$img:$display_name"
+            display_name=""
+        fi
+        echo "${port:-$((BASE_PORT + idx))} ${img:-$DEFAULT_IMAGE} $p ${display_name:-$u}"
+        return
     done < <(read_config)
 }
 
@@ -185,7 +197,7 @@ cmd_start() {
     fi
 
     local port image password
-    read -r port image password <<< "$(read_user_fields "$user")"
+    read -r port image password display_name <<< "$(read_user_fields "$user")"
     local cname
     cname=$(container_name "$user")
     local vname
@@ -287,16 +299,14 @@ cmd_add() {
     local password="$2"
     local port="${3:-}"
     local image="${4:-}"
+    local display_name="${5:-}"
 
     if user_exists "$user"; then
         echo -e "${RED}错误: 用户 '$user' 已存在${NC}"
         exit 1
     fi
 
-    local line="$user:$password"
-    [ -n "$port" ]  && line="$line:$port"
-    [ -n "$image" ] && line="$line:$image"
-
+    local line="$user:$password:$port:$image:$display_name"
     echo "$line" >> "$CONFIG_FILE"
     echo -e "${GREEN}用户 '$user' 已添加${NC}"
     ensure_proxy
@@ -369,9 +379,10 @@ HEADEOF
     # 思源用户列表
     echo '<h2>思源笔记</h2>' >> "$index_html"
     while IFS=':' read -r u p port img; do
-        local assigned_port
+        local assigned_port disp
         assigned_port=$(get_user_port "$u")
-        echo "<a class=\"block\" href=\"/siyuan/$u\">$u <span style=\"color:#999;font-size:14px\">:$assigned_port</span></a>" >> "$index_html"
+        disp=$(read_user_fields "$u" | awk '{print $4}')
+        echo "<a class=\"block\" href=\"/siyuan/$u\">$disp <span style=\"color:#999;font-size:14px\">:$assigned_port → /siyuan/$u</span></a>" >> "$index_html"
     done < <(read_config)
 
     # extras 额外链接
@@ -540,7 +551,9 @@ cmd_status() {
             port_str=$(docker port "$cname" "$SIYUAN_PORT" 2>/dev/null | sed 's/.*://' || echo "-")
         fi
 
-        printf "%-15s " "$u"
+        local disp
+        disp=$(read_user_fields "$u" | awk '{print $4}')
+        printf "%-15s " "$disp"
         echo -ne "$status"
         printf " %-8s %-20s\n" "$port_str" "${img:-$DEFAULT_IMAGE}"
     done < <(read_config)
@@ -556,11 +569,12 @@ cmd_list() {
     while IFS=':' read -r u p port img; do
         local assigned_port
         assigned_port=$(get_user_port "$u")
-        local img_display="${img:-$DEFAULT_IMAGE}"
+        local img_display="${img:-$DEFAULT_IMAGE}" disp
+        disp=$(read_user_fields "$u" | awk '{print $4}')
         if $proxy_running; then
-            printf "%-15s %-8s %-30s %-20s\n" "$u" "$assigned_port" "http://localhost:$PROXY_PORT/siyuan/$u/" "$img_display"
+            printf "%-15s %-8s %-30s %-20s\n" "$disp" "$assigned_port" "http://localhost:$PROXY_PORT/siyuan/$u/" "$img_display"
         else
-            printf "%-15s %-8s http://localhost:%-22s %-20s\n" "$u" "$assigned_port" "$assigned_port" "$img_display"
+            printf "%-15s %-8s http://localhost:%-22s %-20s\n" "$disp" "$assigned_port" "$assigned_port" "$img_display"
         fi
     done < <(read_config)
 }

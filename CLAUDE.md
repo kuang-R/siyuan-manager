@@ -5,7 +5,7 @@
 - `siyuan-manager.sh` — 主管理脚本
 - `users.conf.example` — 用户配置文件模板，使用时复制为 `users.conf`（权限 600）
 - `extras.conf.example` — 额外端口映射模板，使用时复制为 `extras.conf`
-- `test.sh` — 测试脚本（62 项，mock Docker/ss/lsof 命令）
+- `test.sh` — 测试脚本（64 项，mock Docker/ss/lsof 命令）
 - `index.md` — 首页 Markdown 内容（可选）
 - `images/` — 本地镜像 tar（`b3log-siyuan.tar`, `nginx-alpine.tar`, `alpine.tar`），linux/amd64
 - `.gitignore` — 忽略测试临时目录、备份目录、nginx 配置、本地配置文件
@@ -14,10 +14,11 @@
 ## 配置文件格式
 
 ```
-# username:password[:port[:image]]
-alice:pass123                           # 自动分配端口，默认镜像
+# username:password[:port[:image[:display_name]]]
+alice:pass123                           # 自动分配端口，默认镜像，显示用户名
 bob:bob456:6810                         # 指定端口
 charlie:mypw:6812:custom/siyuan:v3      # 全自定义
+eve:pass:::Eve的笔记                    # 自定义显示名称（无自定义端口/镜像时需三个冒号）
 ```
 
 ## extras.conf 格式
@@ -43,7 +44,7 @@ charlie:mypw:6812:custom/siyuan:v3      # 全自定义
 | `archive <user\|all>` | 备份数据 |
 | `restore <user> <file>` | 恢复数据 |
 | `archives` | 列出备份文件 |
-| `add <user> <pw> [port] [img]` | 添加用户到配置文件 |
+| `add <user> <pw> [port] [img] [name]` | 添加用户到配置文件 |
 | `remove <user> [--data]` | 从配置文件移除用户（--data 清理容器数据） |
 
 ## 核心设计
@@ -56,7 +57,9 @@ charlie:mypw:6812:custom/siyuan:v3      # 全自定义
 - 数据通过 Docker volume 持久化，容器删除后数据不丢失
 - 通过 `add`/`remove` 命令管理用户配置，`remove --data` 会同时清理容器和数据卷
 - 容器加入 `siyuan-net` 网络，便于容器间通信
-- `read_user_fields` 一次读取用户所有字段（端口、镜像、密码），避免重复解析配置文件
+- `read_user_fields` 一次读取用户所有字段（端口、镜像、密码、显示名称），用 `read -ra f` 数组分割配置行，避免 `:` 数量变化导致字段错位
+- `display_name` 可选第5字段，未设置时回退显示 `username`；镜像 tag（如 `v3`）通过启发式识别（匹配 `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,30}$`），不会误识别为显示名称
+- 首页思源用户和 extras 服务统一显示 `端口 → 访问路径` 格式
 - `with_users` 统一处理 `all` 和单用户分发逻辑
 - `port_available` Linux 优先用 `ss`，macOS 回退到 `lsof`
 

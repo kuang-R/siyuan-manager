@@ -362,6 +362,20 @@ assert_contains "$o" "6806" "第1个用户 6806"
 assert_contains "$o" "6807" "第2个用户 6807"
 assert_contains "$o" "6808" "第3个用户 6808"
 
+# ---- display_name 显示名称 ----
+echo ""
+echo -e "${YELLOW}[display_name]${NC}"
+
+setup
+cat > "$TMP/test-users.conf" <<'CFGEOF'
+alice:pass1
+bob:pass2:6810::Bob笔记
+CFGEOF
+
+run_script list; o=$(out)
+assert_contains "$o" "alice" "display_name 未设置时回退用户名"
+assert_contains "$o" "Bob笔记" "display_name 设置时显示自定义名称"
+
 # ---- extras 中文标签 slug ----
 echo ""
 echo -e "${YELLOW}[extras 中文标签]${NC}"
