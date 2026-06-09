@@ -77,4 +77,8 @@ charlie:mypw:6812:custom/siyuan:v3      # 全自定义
 - 配置文件中密码明文存储，权限需设为 600
 - 启动时检测端口占用，避免与已有服务冲突
 - 可通过环境变量 `SIYUAN_CONFIG_FILE` 和 `SIYUAN_BACKUP_DIR` 覆盖配置和备份路径
-- 兼容 Linux 和 macOS：`sed` 使用 `> tmp && mv` 代替 `-i`，`grep` 空格匹配使用 `[[:space:]]` 代替 `\s`，扩展正则统一使用 `-E`
+- 兼容 Linux（CentOS 7/8/9）和 macOS：
+  - 配置读取使用 `while ... done < <(cmd)` 进程替换，避免管道子 shell 导致 bash 4.2 上 `local` 变量不可见
+  - `sed` 使用 `> tmp && mv` 代替 `-i`（BSD/GNU 语法差异）
+  - `grep` 空格匹配使用 `[[:space:]]` 代替 `\s`（POSIX 兼容）
+  - 扩展正则统一使用 `-E`

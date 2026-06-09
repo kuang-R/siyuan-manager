@@ -52,7 +52,7 @@ read_config() {
 get_user_port() {
     local target="$1"
     local idx=0
-    read_config | while IFS=':' read -r u p port img; do
+    while IFS=':' read -r u p port img; do
         if [ "$u" = "$target" ]; then
             if [ -n "${port:-}" ]; then
                 echo "$port"
@@ -62,20 +62,20 @@ get_user_port() {
             return
         fi
         idx=$((idx + 1))
-    done
+    done < <(read_config)
 }
 
 # 一次读取用户的所有字段，避免多次遍历配置文件
 # 输出格式: port image password
 read_user_fields() {
     local target="$1" idx=0
-    read_config | while IFS=':' read -r u p port img; do
+    while IFS=':' read -r u p port img; do
         if [ "$u" = "$target" ]; then
             echo "${port:-$((BASE_PORT + idx))} ${img:-$DEFAULT_IMAGE} $p"
             return
         fi
         idx=$((idx + 1))
-    done
+    done < <(read_config)
 }
 
 # 统一处理 all 和单用户分发
@@ -83,11 +83,11 @@ with_users() {
     local cmd="$1" user="$2"
     shift 2
     if [ "$user" = "all" ]; then
-        get_all_users | while read -r u; do
+        while read -r u; do
             echo -e "${YELLOW}=== 用户: $u ===${NC}"
             "$cmd" "$u" "$@"
             echo ""
-        done
+        done < <(get_all_users)
     else
         "$cmd" "$user" "$@"
     fi
@@ -100,9 +100,9 @@ user_exists() {
 
 # 获取所有用户名
 get_all_users() {
-    read_config | while IFS=':' read -r u p port img; do
+    while IFS=':' read -r u p port img; do
         echo "$u"
-    done
+    done < <(read_config)
 }
 
 # 检查端口是否可用
@@ -368,16 +368,16 @@ HEADEOF
 
     # 思源用户列表
     echo '<h2>思源笔记</h2>' >> "$index_html"
-    read_config | while IFS=':' read -r u p port img; do
+    while IFS=':' read -r u p port img; do
         local assigned_port
         assigned_port=$(get_user_port "$u")
         echo "<a class=\"block\" href=\"/siyuan/$u\">$u <span style=\"color:#999;font-size:14px\">:$assigned_port</span></a>" >> "$index_html"
-    done
+    done < <(read_config)
 
     # extras 额外链接
     if [ -f "$EXTRAS_FILE" ] && [ -n "$(read_extras)" ]; then
         echo '<hr><h3>其他服务</h3>' >> "$index_html"
-        read_extras | while IFS=':' read -r label a b; do
+        while IFS=':' read -r label a b; do
             local href suffix
             local full="${a}:${b}"
             case "$full" in
@@ -393,7 +393,7 @@ HEADEOF
                     ;;
             esac
             echo "<a class=\"block\" href=\"$href\">$label <span style=\"color:#999;font-size:14px\">$suffix</span></a>" >> "$index_html"
-        done
+        done < <(read_extras)
     fi
 
     cat >> "$index_html" <<'HEADEOF'
@@ -418,7 +418,7 @@ http {
 NGINXEOF
 
     # siyuan 重定向
-    read_config | while IFS=':' read -r u p port img; do
+    while IFS=':' read -r u p port img; do
         local assigned_port
         assigned_port=$(get_user_port "$u")
         cat >> "$dir/nginx.conf" <<LOCATIONEOF
@@ -427,11 +427,11 @@ NGINXEOF
             return 301 http://\$host:$assigned_port;
         }
 LOCATIONEOF
-    done
+    done < <(read_config)
 
     # extras 重定向（仅本地端口）
     if [ -f "$EXTRAS_FILE" ]; then
-        read_extras | while IFS=':' read -r label a b; do
+        while IFS=':' read -r label a b; do
             local full="${a}:${b}"
             case "$full" in
                 http://*|https://*) ;;  # 外部 URL 不需要 nginx 重定向
@@ -446,7 +446,7 @@ LOCATIONEOF
 LOCATIONEOF
                     ;;
             esac
-        done
+        done < <(read_extras)
     fi
 
     cat >> "$dir/nginx.conf" <<'NGINXEOF'
@@ -513,7 +513,7 @@ cmd_status() {
     printf "%-15s %-12s %-8s %-20s\n" "用户名" "状态" "端口" "镜像"
     printf "%-15s %-12s %-8s %-20s\n" "-----" "----" "----" "-----"
 
-    read_config | while IFS=':' read -r u p port img; do
+    while IFS=':' read -r u p port img; do
         local cname
         cname=$(container_name "$u")
         local status="停止"
@@ -527,7 +527,7 @@ cmd_status() {
         printf "%-15s " "$u"
         echo -ne "$status"
         printf " %-8s %-20s\n" "$port_str" "${img:-$DEFAULT_IMAGE}"
-    done
+    done < <(read_config)
 }
 
 cmd_list() {
@@ -537,7 +537,7 @@ cmd_list() {
     printf "%-15s %-8s %-30s %-20s\n" "用户名" "端口" "访问地址" "镜像"
     printf "%-15s %-8s %-30s %-20s\n" "-----" "----" "--------" "----"
 
-    read_config | while IFS=':' read -r u p port img; do
+    while IFS=':' read -r u p port img; do
         local assigned_port
         assigned_port=$(get_user_port "$u")
         local img_display="${img:-$DEFAULT_IMAGE}"
@@ -546,7 +546,7 @@ cmd_list() {
         else
             printf "%-15s %-8s http://localhost:%-22s %-20s\n" "$u" "$assigned_port" "$assigned_port" "$img_display"
         fi
-    done
+    done < <(read_config)
 }
 
 BACKUP_DIR="${SIYUAN_BACKUP_DIR:-$SCRIPT_DIR/backups}"
