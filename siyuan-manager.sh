@@ -45,7 +45,7 @@ EOF
 
 # 读取配置文件，跳过空行和注释行
 read_config() {
-    grep -v '^\s*#' "$CONFIG_FILE" | grep -v '^\s*$' || true
+    grep -v '^[[:space:]]*#' "$CONFIG_FILE" | grep -v '^[[:space:]]*$' || true
 }
 
 # 获取用户端口（配置中指定或自动分配）
@@ -120,7 +120,7 @@ port_available() {
 
 # 读取额外端口映射配置（标签:端口[:路径] 或 标签:URL）
 read_extras() {
-    [ -f "$EXTRAS_FILE" ] && grep -v '^\s*#' "$EXTRAS_FILE" | grep -v '^\s*$' || true
+    [ -f "$EXTRAS_FILE" ] && grep -v '^[[:space:]]*#' "$EXTRAS_FILE" | grep -v '^[[:space:]]*$' || true
 }
 
 # 简单 Markdown → HTML 转换
@@ -326,7 +326,7 @@ cmd_remove() {
     fi
 
     # 从配置文件中移除该用户行
-    sed -i '' "/^${user}:/d" "$CONFIG_FILE"
+    sed "/^${user}:/d" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
     echo -e "${GREEN}用户 '$user' 已从配置文件中移除${NC}"
     ensure_proxy
 }
@@ -383,7 +383,7 @@ HEADEOF
             case "$full" in
                 http://*|https://*)
                     href="$full"
-                    suffix=$(echo "$full" | sed 's|^https\?://||')
+                    suffix=$(echo "$full" | sed -E 's|^https?://||')
                     ;;
                 *)
                     local slug
@@ -542,9 +542,9 @@ cmd_list() {
         assigned_port=$(get_user_port "$u")
         local img_display="${img:-$DEFAULT_IMAGE}"
         if $proxy_running; then
-            printf "%-15s %-8s http://localhost:%s  %-20s\n" "$u" "$assigned_port" "http://localhost:$PROXY_PORT/siyuan/$u/" "$img_display"
+            printf "%-15s %-8s %-30s %-20s\n" "$u" "$assigned_port" "http://localhost:$PROXY_PORT/siyuan/$u/" "$img_display"
         else
-            printf "%-15s %-8s http://localhost:%s  %-20s\n" "$u" "$assigned_port" "$assigned_port" "$img_display"
+            printf "%-15s %-8s http://localhost:%-22s %-20s\n" "$u" "$assigned_port" "$assigned_port" "$img_display"
         fi
     done
 }

@@ -1,11 +1,11 @@
-思源笔记多用户 Docker 管理脚本，用于多人共享同一台服务器运行思源笔记。
+思源笔记多用户 Docker 管理脚本，用于多人共享同一台服务器运行思源笔记。兼容 Linux 和 macOS。
 
 ## 文件结构
 
 - `siyuan-manager.sh` — 主管理脚本
 - `users.conf.example` — 用户配置文件模板，使用时复制为 `users.conf`（权限 600）
 - `extras.conf.example` — 额外端口映射模板，使用时复制为 `extras.conf`
-- `test.sh` — 测试脚本（60 项，全部 mock Docker 命令）
+- `test.sh` — 测试脚本（60 项，mock Docker/ss/lsof 命令）
 - `index.md` — 首页 Markdown 内容（可选）
 - `images/` — 本地镜像 tar（`b3log-siyuan.tar`, `nginx-alpine.tar`, `alpine.tar`），linux/amd64
 - `.gitignore` — 忽略测试临时目录、备份目录、nginx 配置、本地配置文件
@@ -57,6 +57,7 @@ charlie:mypw:6812:custom/siyuan:v3      # 全自定义
 - 容器加入 `siyuan-net` 网络，便于容器间通信
 - `read_user_fields` 一次读取用户所有字段（端口、镜像、密码），避免重复解析配置文件
 - `with_users` 统一处理 `all` 和单用户分发逻辑
+- `port_available` Linux 优先用 `ss`，macOS 回退到 `lsof`
 
 ## nginx 代理
 
@@ -76,3 +77,4 @@ charlie:mypw:6812:custom/siyuan:v3      # 全自定义
 - 配置文件中密码明文存储，权限需设为 600
 - 启动时检测端口占用，避免与已有服务冲突
 - 可通过环境变量 `SIYUAN_CONFIG_FILE` 和 `SIYUAN_BACKUP_DIR` 覆盖配置和备份路径
+- 兼容 Linux 和 macOS：`sed` 使用 `> tmp && mv` 代替 `-i`，`grep` 空格匹配使用 `[[:space:]]` 代替 `\s`，扩展正则统一使用 `-E`

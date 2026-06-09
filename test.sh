@@ -42,8 +42,19 @@ case "$1" in
 esac
 exit 0
 MOCKEOF
-    sed -i '' "s|\$TMP|$TMP|g" "$TMP/bin/docker"
+    sed "s|\$TMP|$TMP|g" "$TMP/bin/docker" > "$TMP/bin/docker.tmp" && mv "$TMP/bin/docker.tmp" "$TMP/bin/docker"
     chmod +x "$TMP/bin/docker"
+
+    # mock ss/lsof，避免真实端口占用影响测试
+    cat > "$TMP/bin/ss" <<'EOF'
+#!/bin/bash
+exit 0
+EOF
+    cat > "$TMP/bin/lsof" <<'EOF'
+#!/bin/bash
+exit 1
+EOF
+    chmod +x "$TMP/bin/ss" "$TMP/bin/lsof"
 }
 
 # 运行脚本（输出写入文件，避免 $(...) 子shell 影响管道）
